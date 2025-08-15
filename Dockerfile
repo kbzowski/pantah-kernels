@@ -179,10 +179,23 @@ $REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b ${F
 echo "Syncing kernel source code..."
 $REPO --version
 $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
+ 
+echo "Adding KernelSU-Next..."
+cd aosp
+curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+
+echo "Getting KernelSU version..."
+cd ./KernelSU-Next/kernel
+BASE_VERSION=10200
+KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" $BASE_VERSION)
+cd ../../../
 
 echo "Configuring kernel for clean build..."
 
-# Add performance and networking configurations (no root modifications)
+# Add KSU configuration settings
+echo "CONFIG_KSU=y" >> ./aosp/arch/arm64/configs/gki_defconfig
+
+# Add performance and networking configurations
 echo "CONFIG_TCP_CONG_ADVANCED=y" >> ./aosp/arch/arm64/configs/gki_defconfig 
 echo "CONFIG_TCP_CONG_BBR=y" >> ./aosp/arch/arm64/configs/gki_defconfig
 echo "CONFIG_NET_SCH_FQ=y" >> ./aosp/arch/arm64/configs/gki_defconfig
@@ -202,9 +215,12 @@ echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./aosp/arch/arm64/configs/gki_defconfig
 # Remove defconfig check
 sed -i 's/check_defconfig//' ./aosp/build.config.gki
 
-# Set kernel version string
+# Set kernel version string with KernelSU-Next naming
 perl -pi -e 's/-maybe-dirty//g' ./build/kernel/kleaf/impl/stamp.bzl
-echo "CONFIG_LOCALVERSION=\"-Docker-Clean-6.1.124\"" >> ./aosp/arch/arm64/configs/gki_defconfig
+echo "CONFIG_LOCALVERSION=\"-NEXT-v$KSU_VERSION-pantah\"" >> ./aosp/arch/arm64/configs/gki_defconfig
+
+# Set kernel timestamp
+perl -pi -e 's/build-timestamp = \$\(or \$\(KBUILD_BUILD_TIMESTAMP\), \$\(build-timestamp-auto\)\)/build-timestamp = "Sun Apr 20 04:20:00 UTC 2025"/' ./aosp/init/Makefile
 
 # Remove protected exports that might cause issues
 rm -rf ./aosp/android/abi_gki_protected_exports_* || true
@@ -240,20 +256,20 @@ cp ./Image.gz ./bootimgs/
 echo "Creating AnyKernel3 flashable ZIPs..."
 cd ./AnyKernel3
 
-# Create standard Image ZIP
-ZIP_NAME="Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3.zip"
+# Create standard Image ZIP with KernelSU-Next naming
+ZIP_NAME="KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3.zip"
 cp ../Image ./Image
 zip -r "../output/$ZIP_NAME" ./*
 rm ./Image
 
 # Create LZ4 compressed ZIP
-ZIP_NAME="Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3-lz4.zip"
+ZIP_NAME="KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3-lz4.zip"
 cp ../Image.lz4 ./Image.lz4
 zip -r "../output/$ZIP_NAME" ./*
 rm ./Image.lz4
 
 # Create GZIP compressed ZIP
-ZIP_NAME="Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3-gz.zip"
+ZIP_NAME="KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-AnyKernel3-gz.zip"
 cp ../Image.gz ./Image.gz
 zip -r "../output/$ZIP_NAME" ./*
 rm ./Image.gz
@@ -269,17 +285,17 @@ gzip -n -k -f -9 ./Image > ./Image.gz
 # Build standard boot.img
 $MKBOOTIMG --header_version 4 --kernel Image --output boot.img
 $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-cp ./boot.img ../output/Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-boot.img
+cp ./boot.img ../output/KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-boot.img
 
 # Build gzip compressed boot.img
 $MKBOOTIMG --header_version 4 --kernel Image.gz --output boot-gz.img
 $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-gz.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-cp ./boot-gz.img ../output/Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-boot-gz.img
+cp ./boot-gz.img ../output/KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-boot-gz.img
 
 # Build LZ4 compressed boot.img
 $MKBOOTIMG --header_version 4 --kernel Image.lz4 --output boot-lz4.img
 $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-lz4.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-cp ./boot-lz4.img ../output/Docker-Clean-Android14-6.1.124-${OS_PATCH_LEVEL}-boot-lz4.img
+cp ./boot-lz4.img ../output/KernelSU-NEXT-v$KSU_VERSION-Android14-6.1.124-${OS_PATCH_LEVEL}-boot-lz4.img
 
 cd /workspace
 
