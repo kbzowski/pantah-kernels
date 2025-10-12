@@ -1,86 +1,138 @@
-# Wild Kernels for Android
+# Pixel 7 Kernel builds with ROOT
 
-## Your warranty is no longer valid!
+> This repository demonstrates Android kernel compilation techniques for Google Pixel 7 (Pantah) devices using Docker containerization with SukiSU-Ultra, SUSFS, and Baseband Guard.
 
-I am **not responsible** for bricked devices, damaged hardware, or any issues that arise from using this kernel.
+[![Android](https://img.shields.io/badge/Android-14-green)](https://developer.android.com/)
+[![Kernel](https://img.shields.io/badge/Kernel-6.1.145-blue)](https://www.kernel.org/)
+[![Security Patch](https://img.shields.io/badge/Patch-2025--09-orange)](https://source.android.com/security/bulletin)
+[![License](https://img.shields.io/badge/license-WTFPL-red)](https://en.wikipedia.org/wiki/WTFPL)
 
-**Please** do thorough research and fully understand the features included in this kernel before flashing it!
+## ✨ Features
 
-By flashing this kernel, **YOU** are choosing to make these modifications. If something goes wrong, **do not blame me**!
+### Root & Security
+- **SukiSU-Ultra**: Advanced root solution with manual hooks
+- **SUSFS**: Comprehensive kernel-level hiding system
+  - sus_path, sus_mount, sus_kstat
+  - Spoof uname and cmdline/bootconfig
+  - Open redirect and magic mount support
+- **KPM (Kernel Patch Module)**: ⚠️ Currently disabled - causes system crash on boot
+- **Baseband Guard**: Enhanced baseband security protection
 
----
+### Networking
+- **TCP BBR**: Advanced congestion control algorithm (default)
+- **Extended iptables/netfilter**: Full IP_SET support
+- **IPv6 NAT & Masquerade**: Complete IPv6 networking support
 
-### Proceed at your own risk!
+### Optimizations
+- **LTO (Link Time Optimization)**: Thin LTO for better performance
+- **BPF Stream Parser**: Enhanced network packet processing
+- **tmpfs Extended Attributes**: POSIX ACL support
 
----
+## 📋 Requirements
 
-# Kernels:
- 
-[GKI](https://github.com/WildKernels/GKI_KernelSU_SUSFS)  
-[Sultan](https://github.com/WildKernels/Sultan_KernelSU_SUSFS)  
-[OnePlus](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS)  
+- Docker installed and running
+- At least 50GB free disk space
+- 8GB+ RAM allocated to Docker
+- Stable internet connection (for downloading kernel source)
+- Compatible devices:
+  - Google Pixel 7 (Panther)
 
----
+## 🏗️ Building the Kernel
 
-# Other Links:
+```bash
+# Clone the repository
+git clone https://github.com/kbzowski/pantah-kernels.git
+cd pantah-kernels
 
-[Kernel Patches](https://github.com/WildKernels/kernel_patches)  
-[Old Build Scripts](https://github.com/TheWildJames/kernel_build_scripts)  
-[Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher)  
+# Build kernel image
+docker build -t pantah-kernel .
 
----
+# Run the build process
+docker run --rm -v ./output:/workspace/output pantah-kernel
 
-# Installation instructions: 
+# Or run interactively
+docker run -it --rm -v ./output:/workspace/output pantah-kernel bash
+```
 
-Follow the steps for GKI:  
-[Installation](https://kernelsu.org/guide/installation.html)
+## 📱 Flashing the Kernel
 
----
+Follow these steps to flash the custom kernel to your device:
 
-# Features
+### Prerequisites
+1. **Install SukiSU App**: Download and install the latest SukiSU app on your device
 
-- **KernelSU**: KernelSU is a root solution for Android GKI devices, it works in kernel mode and grants root permission to userspace applications directly in kernel space.
-- **SUSFS**: An addon root hiding kernel patches and userspace module for KernelSU.
+### Step-by-Step Installation
 
----
+#### 1. Prepare init_boot Partition
+- Extract `init_boot.img` from your device's factory image
+- Open SukiSU Ultra app and patch the `init_boot.img` using LKM (Loadable Kernel Module) method
+- The app will create a patched file named `kernelsu_patched_XXXXXXXX_YYYYYY.img`
 
-# Credits
+#### 2. Flash Patched init_boot
+```bash
+# Reboot device to bootloader
+adb reboot bootloader
 
-- **KernelSU**: Developed by [tiann](https://github.com/tiann/KernelSU).
-- **KernelSU-Next**: Developed by [rifsxd](https://github.com/KernelSU-Next/KernelSU-Next).
-- **Magic-KSU**: Developed by [5ec1cff](https://github.com/5ec1cff/KernelSU).
-- **SUSFS**: Developed by [simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git).
-- **SUSFS Module**: Developed by [sidex15](https://github.com/sidex15).
-- **Sultan Kernels**: Developed by [kerneltoast](https://github.com/kerneltoast).
+# Flash the patched init_boot
+fastboot flash init_boot .\kernelsu_patched_XXXXXXXX_YYYYYY.img
 
-Special thanks to the open-source community for their contributions!
+# Reboot device
+fastboot reboot
+```
+Now you should have root.
 
----
+#### 3. Install Custom Kernel
+- Open SukiSU app on your device
+- Navigate to kernel installation section
+- Select **AnyKernel3** installation method
+- Choose the AnyKernel3 ZIP file from your kernel build (`output/` directory)
+- Follow the app instructions to complete the installation
+- Reboot when prompted
 
-# Support
 
-If you encounter any issues or need help, feel free to open an issue in this repository or reach out to me.
+## 🙏 Credits and Acknowledgments
 
----
+This project builds upon the excellent work of:
 
-# Disclaimer
+- [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) - Root solution with advanced features
+- [SUSFS for KSU](https://github.com/ShirkNeko/susfs4ksu) - Kernel-level hiding and security
+- [SukiSU Patches](https://github.com/SukiSU-Ultra/SukiSU_patch) - Additional kernel patches
+- [Baseband Guard](https://github.com/vc-teahouse/Baseband-guard) - Baseband security enhancement
+- [AnyKernel3](https://github.com/MiRinChan/AnyKernel3) - Universal kernel flasher
+- [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) - Original KernelSU development
+- [Google AOSP](https://source.android.com/) - Kernel source and build tools
 
-Flashing this kernel will void your warranty, and there is always a risk of bricking your device. Please make sure to back up your data and ensure you understand the risks before proceeding.
+## 🔧 Troubleshooting
 
-**Proceed at your own risk!**
+### Known Issues
 
----
+#### KPM (Kernel Patch Module) Disabled
+**Problem**: KPM support is currently disabled (`CONFIG_KPM=n`) in the build configuration.
 
-[Telegram](https://t.me/TheWildJames)  
-[Telegram Group](https://t.me/Wild_Kernels)  
+**Reason**: Enabling KPM causes the system to crash immediately after boot. The kernel image patching process (commented out in Dockerfile lines 324-331) destabilizes the system.
 
-# Special thanks to the following people for their contributions!
-This helps me alot! <3
+**Status**: No solution available at this time. KPM will remain disabled until a stable implementation is found.
 
-[simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git) - Created SUSFS!  
-[sidex15](https://github.com/sidex15) - Created module!  
-[backslashxx](https://github.com/backslashxx) - Helped with patches!  
-[Teemo](https://github.com/liqideqq) - Helped with patches!  
-[幕落](https://github.com/MuLuo688) - Donation!
+**Impact**: The kernel builds and boots successfully without KPM. All other features (SukiSU-Ultra, SUSFS, Baseband Guard) work normally.
 
-If you have contributed and are not here please remind me!
+### Factory Images and Recovery
+
+If you encounter any issues or need to restore your device to a working state, you can download factory images (including stock kernel) from Google Pixel Factory Images:
+- [Pixel 7 (panther)](https://developers.google.com/android/images#panther)
+- [Pixel 7 Pro (cheetah)](https://developers.google.com/android/images#cheetah)
+
+For easy installation of factory images, use [PixelFlasher](https://github.com/badabing2005/PixelFlasher)
+
+### Build Issues
+
+If you encounter build issues:
+1. Ensure Docker has sufficient disk space (at least 50GB free)
+2. Check Docker memory allocation (recommended 8GB+)
+3. Try cleaning Docker cache: `docker system prune -a`
+4. For networking issues, check your internet connection during repo sync
+
+## ⚠️ Educational Disclaimer
+- This is for educational and research purposes only
+- I am NOT responsible for any damage to devices or your data
+- Flashing custom kernels may void your warranty
+- Always backup your data before flashing
