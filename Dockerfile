@@ -120,9 +120,6 @@ RUN ANYKERNEL_BRANCH="gki-2.0" && \
 # Copy build script from host
 COPY --chown=builder:builder build_kernel.sh /workspace/build_kernel.sh
 
-# Copy factory Pixel 7 config
-COPY --chown=builder:builder factory_default_config /workspace/factory_default_config
-
 # Make build script executable
 RUN chmod +x /workspace/build_kernel.sh
 
