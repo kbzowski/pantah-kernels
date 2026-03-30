@@ -1,0 +1,26 @@
+services:
+  kernel-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pantah-build
+    volumes:
+      - ./output:/workspace/output:rw
+    # Prevent OOM on large kernel builds
+    mem_limit: 8g
+    # Use all available CPUs
+    cpus: 0
+
+  # Interactive shell for debugging
+  kernel-shell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pantah-shell
+    volumes:
+      - ./output:/workspace/output:rw
+    stdin_open: true
+    tty: true
+    entrypoint: /bin/bash
+    profiles:
+      - debug

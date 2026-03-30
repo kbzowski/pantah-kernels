@@ -126,8 +126,8 @@ RUN chmod +x /workspace/build_kernel.sh
 # Create output directory
 RUN mkdir -p /workspace/output
 
-# Set the default command
-CMD ["/workspace/build_kernel.sh"]
+# Entrypoint: run build, then sync output
+COPY --chown=builder:builder entrypoint.sh /workspace/entrypoint.sh
+RUN chmod +x /workspace/entrypoint.sh
 
-# Expose output directory as volume
-VOLUME ["/workspace/output"]
+CMD ["/workspace/entrypoint.sh"]

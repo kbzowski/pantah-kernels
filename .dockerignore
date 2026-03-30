@@ -2,3 +2,5 @@
 *
 !./factory_default_config
 !build_kernel.sh
+!entrypoint.sh
+!./patches

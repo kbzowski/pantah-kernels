@@ -3,7 +3,7 @@ set -e
 set -o pipefail
 
 # Build configuration - modify these values as needed
-OS_PATCH_LEVEL="2025-09-05"
+OS_PATCH_LEVEL="2026-03-05"
 CONFIG="pantah-kernel"
 
 # This is called Android14 kernel bacause device was initially with Android14
@@ -21,18 +21,18 @@ cd "$CONFIG"
 
 echo "Initializing kernel source repository..."
 ANDROID_BRANCH="common-android14-6.1-${SEC_PATCH:0:7}"
-$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b ${ANDROID_BRANCH} --repo-rev=v2.16
-$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
+$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b ${ANDROID_BRANCH} --repo-rev=v2.16 &> /dev/null
+$REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast &> /dev/null
 
 cd common
 KERNEL_VERSION=$(make kernelversion)
 echo "Kernel version from source: $KERNEL_VERSION"
 cd ../
 
-echo "Adding SukiSu-Ultra..."
-SUKISU_BRANCH=susfs-test
+echo "Adding ReSukiSU..."
+SUKISU_BRANCH=main
 cd common
-curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s $SUKISU_BRANCH
+curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s $SUKISU_BRANCH
 
 echo "Adding Baseband Guard..."
 curl -LSs https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -44,14 +44,20 @@ cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./$CONFIG/
 cp ./susfs4ksu/kernel_patches/fs/* ./$CONFIG/common/fs/
 cp ./susfs4ksu/kernel_patches/include/linux/* ./$CONFIG/common/include/linux/
 cd ./$CONFIG/common
-patch -p1 <50_add_susfs_in_gki-android14-6.1.patch
+
+#cp /workspace/$CONFIG/common/fs/proc/base.c /workspace/output/
+#cp 50_add_susfs_in_gki-android14-6.1.patch /workspace/output/
+echo "Apply 50_add_susfs_in_gki-android14-6.1.patch for 6.1.162"
+#mv /workspace/patches/50.patch .
+#patch -p1 <50.patch
+patch --fuzz=3 -p1 < 50_add_susfs_in_gki-android14-6.1.patch
 
 echo "Apply New Hooks Patches"
 cd /workspace
 git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
-cp SukiSU_patch/hooks/syscall_hooks.patch ./$CONFIG/common
+cp SukiSU_patch/hooks/scope_min_manual_hooks_v1.6.patch ./$CONFIG/common
 cd ./$CONFIG/common
-patch -p1 -F 3 <syscall_hooks.patch
+patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
 
 echo "Apply Hide Stuff Patches"
 cd /workspace
@@ -70,13 +76,12 @@ echo "CONFIG_KSU_MANUAL_HOOK=y" >>./common/arch/arm64/configs/gki_defconfig
 
 # Add SUSFS configuration settings
 echo "CONFIG_KSU_SUSFS=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >>./common/arch/arm64/configs/gki_defconfig
+echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >>./common/arch/arm64/configs/gki_defconfig
@@ -84,6 +89,7 @@ echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >>./common/arch/arm64/configs/gki_defconfig
+echo "CONFIG_KSU_MANUAL_SU=n" >>./common/arch/arm64/configs/gki_defconfig
 
 # Add additional tmpfs config setting
 echo "CONFIG_TMPFS_XATTR=y" >>./common/arch/arm64/configs/gki_defconfig
@@ -130,7 +136,13 @@ echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >>./common/arch/arm64/configs/gki_defco
 
 # Enable Baseband-guard
 echo "CONFIG_BBG=y" >>./common/arch/arm64/configs/gki_defconfig
+echo "CONFIG_LSM=\"landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard\"" >>./common/arch/arm64/configs/gki_defconfig
 
+# Test for KPM?
+echo "CONFIG_KALLSYMS=y" >>./common/arch/arm64/configs/gki_defconfig
+
+# Debug
+cp ./common/arch/arm64/configs/gki_defconfig /workspace/output/
 # Remove defconfig check
 sed -i 's/check_defconfig//' ./common/build.config.gki
 
@@ -154,7 +166,7 @@ perl -pi -e 's/^\s*"protected_exports_list"\s*:\s*"android\/abi_gki_protected_ex
 
 echo "Starting kernel compilation..."
 
-tools/bazel build --disk_cache=$HOME/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist 2 >&1 | tee build.log
+tools/bazel build --disk_cache=$HOME/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist 2>&1 | tee build.log
 
 if [ $? -eq 0 ]; then
     echo "Kernel build completed successfully!"
@@ -163,8 +175,21 @@ else
     exit 1
 fi
 
-SUKISU_VERSION=$(grep "SukiSU-Ultra version (GitHub)" build.log | head -1 | awk '{print $NF}')
-SUSFS_VERSION=$(grep "SUSFS_VERSION" build.log | head -1 | awk '{print $NF}')
+# Extract versions from build log (try ReSukiSU first, then SukiSU-Ultra as fallback)
+SUKISU_VERSION=$(grep -E "(ReSukiSU|SukiSU-Ultra) version" build.log | head -1 | awk '{print $NF}')
+# SUSFS version is not in build log, extract from source
+SUSFS_VERSION=$(grep -r "SUSFS_VERSION" ./common/include/linux/susfs.h 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "1.5.11")
+
+# Fallback if versions are empty
+if [ -z "$SUKISU_VERSION" ]; then
+    SUKISU_VERSION="unknown"
+fi
+if [ -z "$SUSFS_VERSION" ]; then
+    SUSFS_VERSION="2.0.0"
+fi
+
+echo "Detected SukiSU version: $SUKISU_VERSION"
+echo "Detected SUSFS version: $SUSFS_VERSION"
 
 echo "Extracting built kernel images..."
 cd /workspace
@@ -172,17 +197,38 @@ cd /workspace
 # Create output directory
 mkdir -p output
 
-# Copy built kernel image
-cp ./$CONFIG/bazel-bin/common/kernel_aarch64/Image ./
+# Find and copy built kernel image
+IMAGE_PATH="./$CONFIG/bazel-bin/common/kernel_aarch64/Image"
+echo "Looking for Image at: $IMAGE_PATH"
+
+if [ -f "$IMAGE_PATH" ]; then
+    cp "$IMAGE_PATH" ./
+    echo "Image copied successfully"
+else
+    echo "ERROR: Image not found at $IMAGE_PATH"
+    echo "Searching for Image file..."
+    find ./$CONFIG -name "Image" -type f 2>/dev/null | head -5
+    # Try alternative path
+    ALT_PATH=$(find ./$CONFIG -name "Image" -type f 2>/dev/null | head -1)
+    if [ -n "$ALT_PATH" ]; then
+        echo "Found Image at: $ALT_PATH"
+        cp "$ALT_PATH" ./
+    else
+        echo "FATAL: Cannot find kernel Image file"
+        exit 1
+    fi
+fi
 
 echo "Creating AnyKernel3 flashable ZIPs..."
 cd ./AnyKernel3
 
 # Create AnyKernel3 archive
-FILENAME_PREFIX="SukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
+FILENAME_PREFIX="ReSukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
 ZIP_NAME="${FILENAME_PREFIX}-AnyKernel3.zip"
 cp ../Image ./Image
 zip -r "../output/$ZIP_NAME" ./*
+echo "Created ZIP: $ZIP_NAME"
+ls -la
 rm ./Image
 
 cd /workspace
