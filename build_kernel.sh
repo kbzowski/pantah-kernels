@@ -50,17 +50,56 @@ cd ./$CONFIG/common
 echo "Apply 50_add_susfs_in_gki-android14-6.1.patch for 6.1.162"
 #mv /workspace/patches/50.patch .
 #patch -p1 <50.patch
+
+# Fix hunk #1 of fs/namespace.c: upstream kernel has an extra `#include <trace/hooks/blk.h>`
+# between `#include "internal.h"` and the blank line that the SUSFS patch's context expects.
+# Rewrite the hunk header (-32,10 -> -32,11; +32,21 -> +32,22) and add the missing context line.
+python3 - <<'PYEOF'
+p = '50_add_susfs_in_gki-android14-6.1.patch'
+lines = open(p).read().splitlines(keepends=True)
+# Find the start of fs/namespace.c diff section
+ns_start = next((i for i, l in enumerate(lines) if l.startswith('diff --git a/fs/namespace.c')), -1)
+if ns_start < 0:
+    raise SystemExit('[fix] fs/namespace.c diff section not found')
+# Within that section, find the first hunk header
+for i in range(ns_start, len(lines)):
+    if lines[i].startswith('@@ '):
+        hh = i
+        break
+else:
+    raise SystemExit('[fix] no hunk header found in fs/namespace.c section')
+import re
+m = re.match(r'^@@ -32,(\d+) \+32,(\d+) @@', lines[hh])
+if not m:
+    raise SystemExit('[fix] unexpected hunk header: ' + lines[hh].rstrip())
+old_ctx, old_add = int(m.group(1)), int(m.group(2))
+if old_ctx == 11:
+    print('[fix] fs/namespace.c hunk #1 already patched, skipping')
+elif old_ctx == 10:
+    # Bump context count by 1 (we add `#include <trace/hooks/blk.h>` as context); +N grows by 1 too
+    lines[hh] = '@@ -32,11 +32,%d @@\n' % (old_add + 1)
+    for j in range(hh + 1, min(hh + 40, len(lines))):
+        if lines[j].rstrip('\r\n') == ' #include "internal.h"':
+            lines.insert(j + 1, ' #include <trace/hooks/blk.h>\n')
+            break
+    else:
+        raise SystemExit('[fix] internal.h context line not found in hunk')
+    open(p, 'w').writelines(lines)
+    print('[fix] fs/namespace.c hunk #1 rewritten for trace/hooks/blk.h context (+32,%d -> +32,%d)' % (old_add, old_add + 1))
+else:
+    raise SystemExit('[fix] unexpected hunk header: ' + lines[hh].rstrip())
+PYEOF
+
 patch --fuzz=3 -p1 < 50_add_susfs_in_gki-android14-6.1.patch
 
-echo "Apply New Hooks Patches"
-cd /workspace
-git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
-cp SukiSU_patch/hooks/scope_min_manual_hooks_v1.6.patch ./$CONFIG/common
-cd ./$CONFIG/common
-patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
+# NOTE: Do NOT apply scope_min_manual_hooks_v1.6.patch with modern ReSukiSU on kernel < 6.8.
+# ReSukiSU's CONFIG_KSU_MANUAL_HOOK_AUTO_* options (default y) install the manual hooks via LSM
+# automatically, and ReSukiSU's inline_hook_check.mk explicitly rejects builds where the legacy
+# `ksu_vfs_read_hook` symbol still appears in fs/read_write.c.
 
 echo "Apply Hide Stuff Patches"
 cd /workspace
+git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
 cp SukiSU_patch/69_hide_stuff.patch ./$CONFIG/common
 cd ./$CONFIG/common
 patch -p1 -F 3 <69_hide_stuff.patch
