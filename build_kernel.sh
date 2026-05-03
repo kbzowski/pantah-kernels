@@ -258,11 +258,75 @@ else
     fi
 fi
 
+FILENAME_PREFIX="ReSukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
+
+# ----- Build fastboot-flashable boot.img by repacking stock factory boot.img -----
+# Override FACTORY_URL env var to use a different stock build.
+FACTORY_URL="${FACTORY_URL:-https://dl.google.com/dl/android/aosp/panther-cp1a.260405.005-factory-3d3f2f42.zip}"
+FACTORY_ZIP="/tmp/$(basename "$FACTORY_URL")"
+BOOT_WORKDIR="/tmp/bootrepack"
+MKBOOTIMG=$(find "/workspace/$CONFIG" -name "mkbootimg.py" -type f 2>/dev/null | head -1)
+UNPACK_BOOT=$(find "/workspace/$CONFIG" -name "unpack_bootimg.py" -type f 2>/dev/null | head -1)
+
+if [ -z "$MKBOOTIMG" ] || [ -z "$UNPACK_BOOT" ]; then
+    echo "WARN: AOSP boot tools (mkbootimg.py / unpack_bootimg.py) not found in source tree - skipping boot.img repack"
+else
+    echo "Using mkbootimg: $MKBOOTIMG"
+    echo "Using unpack_bootimg: $UNPACK_BOOT"
+    echo "Building fastboot-flashable boot.img from stock factory image..."
+    if [ ! -f "$FACTORY_ZIP" ]; then
+        echo "Downloading $FACTORY_URL ..."
+        curl -L -o "$FACTORY_ZIP" "$FACTORY_URL"
+    else
+        echo "Using cached $FACTORY_ZIP"
+    fi
+    rm -rf "$BOOT_WORKDIR" && mkdir -p "$BOOT_WORKDIR"
+    cd "$BOOT_WORKDIR"
+    # Factory zip contains a nested image-<device>-<build>.zip with boot.img inside
+    unzip -o "$FACTORY_ZIP" >/dev/null
+    INNER_ZIP=$(find . -name "image-*.zip" | head -1)
+    [ -z "$INNER_ZIP" ] && { echo "FATAL: image-*.zip not found in factory zip"; exit 1; }
+    unzip -o "$INNER_ZIP" boot.img >/dev/null
+    [ ! -f boot.img ] && { echo "FATAL: boot.img missing inside $INNER_ZIP"; exit 1; }
+
+    mkdir unpack
+    python3 "$UNPACK_BOOT" --boot_img boot.img --out unpack >unpack.log 2>&1 || { echo "FATAL: unpack_bootimg failed:"; cat unpack.log; exit 1; }
+    cat unpack.log
+    # Replace kernel with our compiled Image
+    cp /workspace/Image unpack/kernel
+
+    # Pixel 7 boot.img is header v4, kernel-only (ramdisk lives in init_boot).
+    # Build minimal mkbootimg command using info from unpack output.
+    # Header version is fixed v4 for android14-6.1 era; preserve cmdline/os_version if exposed.
+    HDR_VER=$(awk -F: '/header version/{gsub(/ /,"",$2);print $2}' unpack.log | head -1)
+    HDR_VER="${HDR_VER:-4}"
+    OS_VER=$(awk -F: '/os version/{print $2}' unpack.log | head -1 | xargs)
+    OS_PATCH=$(awk -F: '/os patch level/{print $2}' unpack.log | head -1 | xargs)
+    CMDLINE=$(awk -F: '/^command line args/{sub(/^[^:]*: /,"");print}' unpack.log | head -1 | xargs)
+
+    # unpack_bootimg.py prints literal "None" when a field is unset; filter those out
+    [ "$OS_VER" = "None" ]   && OS_VER=""
+    [ "$OS_PATCH" = "None" ] && OS_PATCH=""
+    [ "$CMDLINE" = "None" ]  && CMDLINE=""
+
+    PY_ARGS=( --header_version "$HDR_VER" --kernel unpack/kernel --output boot-resukisu.img )
+    [ -n "$OS_VER" ]   && PY_ARGS+=( --os_version "$OS_VER" )
+    [ -n "$OS_PATCH" ] && PY_ARGS+=( --os_patch_level "$OS_PATCH" )
+    [ -n "$CMDLINE" ]  && PY_ARGS+=( --cmdline "$CMDLINE" )
+    [ -f unpack/ramdisk ] && [ -s unpack/ramdisk ] && PY_ARGS+=( --ramdisk unpack/ramdisk )
+    [ -f unpack/dtb ]     && [ -s unpack/dtb ]     && PY_ARGS+=( --dtb unpack/dtb )
+
+    echo "Repacking: python3 $MKBOOTIMG ${PY_ARGS[*]}"
+    python3 "$MKBOOTIMG" "${PY_ARGS[@]}"
+    cp boot-resukisu.img "/workspace/output/${FILENAME_PREFIX}-boot.img"
+    echo "Created fastboot boot.img: ${FILENAME_PREFIX}-boot.img"
+    cd /workspace
+fi
+
 echo "Creating AnyKernel3 flashable ZIPs..."
 cd ./AnyKernel3
 
 # Create AnyKernel3 archive
-FILENAME_PREFIX="ReSukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
 ZIP_NAME="${FILENAME_PREFIX}-AnyKernel3.zip"
 cp ../Image ./Image
 zip -r "../output/$ZIP_NAME" ./*
