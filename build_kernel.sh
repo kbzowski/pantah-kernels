@@ -3,7 +3,7 @@ set -e
 set -o pipefail
 
 # Build configuration - modify these values as needed
-OS_PATCH_LEVEL="2026-03-05"
+OS_PATCH_LEVEL="2026-06-05"
 CONFIG="pantah-kernel"
 
 # This is called Android14 kernel bacause device was initially with Android14
@@ -21,7 +21,7 @@ cd "$CONFIG"
 
 echo "Initializing kernel source repository..."
 ANDROID_BRANCH="common-android14-6.1-${SEC_PATCH:0:7}"
-$REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b ${ANDROID_BRANCH} --repo-rev=v2.16 &> /dev/null
+$REPO init --depth=1 -u https://android.googlesource.com/kernel/manifest -b ${ANDROID_BRANCH} --repo-rev=v2.16 &> /dev/null
 $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast &> /dev/null
 
 cd common
@@ -36,6 +36,16 @@ curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup
 
 echo "Adding Baseband Guard..."
 curl -LSs https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+
+# Must run BEFORE the SUSFS patch: 69_hide_stuff.patch anchors on
+# `pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;` in show_map_vma(), and SUSFS adds a
+# second copy of that line in its OPEN_REDIRECT block, so fuzzy matching picks the wrong one.
+echo "Apply Hide Stuff Patches"
+cd /workspace
+git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
+cp SukiSU_patch/69_hide_stuff.patch ./$CONFIG/common
+cd ./$CONFIG/common
+patch -p1 -F 3 <69_hide_stuff.patch
 
 echo "Applying SUSFS patches..."
 cd /workspace
@@ -97,38 +107,24 @@ patch --fuzz=3 -p1 < 50_add_susfs_in_gki-android14-6.1.patch
 # automatically, and ReSukiSU's inline_hook_check.mk explicitly rejects builds where the legacy
 # `ksu_vfs_read_hook` symbol still appears in fs/read_write.c.
 
-echo "Apply Hide Stuff Patches"
-cd /workspace
-git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
-cp SukiSU_patch/69_hide_stuff.patch ./$CONFIG/common
-cd ./$CONFIG/common
-patch -p1 -F 3 <69_hide_stuff.patch
-
 echo "Configuring kernel for build..."
 cd /workspace/$CONFIG
 
-# Add KSU configuration settings
+# Add KSU configuration settings. Hook mode is a Kconfig `choice`; select ONLY
+# CONFIG_KSU_SUSFS (SUSFS Inline Hook) so the hooks come from the SUSFS patch we apply.
 echo "CONFIG_KSU=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KPM=n" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_SUS_SU=n" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_MANUAL_HOOK=y" >>./common/arch/arm64/configs/gki_defconfig
 
-# Add SUSFS configuration settings
+# Add SUSFS configuration settings (symbols defined in ReSukiSU kernel/Kconfig)
 echo "CONFIG_KSU_SUSFS=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >>./common/arch/arm64/configs/gki_defconfig
-echo "CONFIG_KSU_MANUAL_SU=n" >>./common/arch/arm64/configs/gki_defconfig
 
 # Add additional tmpfs config setting
 echo "CONFIG_TMPFS_XATTR=y" >>./common/arch/arm64/configs/gki_defconfig
@@ -177,7 +173,6 @@ echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >>./common/arch/arm64/configs/gki_defco
 echo "CONFIG_BBG=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_LSM=\"landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard\"" >>./common/arch/arm64/configs/gki_defconfig
 
-# Test for KPM?
 echo "CONFIG_KALLSYMS=y" >>./common/arch/arm64/configs/gki_defconfig
 
 # Debug
@@ -262,11 +257,14 @@ FILENAME_PREFIX="ReSukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNE
 
 # ----- Build fastboot-flashable boot.img by repacking stock factory boot.img -----
 # Override FACTORY_URL env var to use a different stock build.
-FACTORY_URL="${FACTORY_URL:-https://dl.google.com/dl/android/aosp/panther-cp1a.260405.005-factory-3d3f2f42.zip}"
+FACTORY_URL="${FACTORY_URL:-https://dl.google.com/dl/android/aosp/panther-cp2a.260705.006-factory-ed94a24e.zip}"
 FACTORY_ZIP="/tmp/$(basename "$FACTORY_URL")"
 BOOT_WORKDIR="/tmp/bootrepack"
 MKBOOTIMG=$(find "/workspace/$CONFIG" -name "mkbootimg.py" -type f 2>/dev/null | head -1)
 UNPACK_BOOT=$(find "/workspace/$CONFIG" -name "unpack_bootimg.py" -type f 2>/dev/null | head -1)
+AVBTOOL=$(find "/workspace/$CONFIG" -name "avbtool.py" -o -name "avbtool" -type f 2>/dev/null | head -1)
+# Pixel 7 (panther/cheetah) boot partition is 64 MiB; override via BOOT_PARTITION_SIZE if needed.
+BOOT_PARTITION_SIZE="${BOOT_PARTITION_SIZE:-67108864}"
 
 if [ -z "$MKBOOTIMG" ] || [ -z "$UNPACK_BOOT" ]; then
     echo "WARN: AOSP boot tools (mkbootimg.py / unpack_bootimg.py) not found in source tree - skipping boot.img repack"
@@ -318,8 +316,36 @@ else
 
     echo "Repacking: python3 $MKBOOTIMG ${PY_ARGS[*]}"
     python3 "$MKBOOTIMG" "${PY_ARGS[@]}"
+
+    # Add an AVB hash footer so the image has the partition structure the bootloader
+    # expects. No key is used: the footer is unsigned (just the hash descriptor). An
+    # unlocked Pixel won't trust a custom AVB key anyway, so the device must still be
+    # flashed with vbmeta verification disabled (see vbmeta.img exported below).
+    if [ -z "$AVBTOOL" ]; then
+        echo "WARN: avbtool not found in source tree - boot.img will have no AVB footer"
+    else
+        echo "Adding AVB hash footer (partition_size=$BOOT_PARTITION_SIZE): $AVBTOOL"
+        if python3 "$AVBTOOL" add_hash_footer \
+                --image boot-resukisu.img \
+                --partition_name boot \
+                --partition_size "$BOOT_PARTITION_SIZE"; then
+            echo "AVB hash footer added"
+        else
+            echo "WARN: avbtool add_hash_footer failed (wrong BOOT_PARTITION_SIZE?) - keeping unsigned image"
+        fi
+    fi
+
     cp boot-resukisu.img "/workspace/output/${FILENAME_PREFIX}-boot.img"
     echo "Created fastboot boot.img: ${FILENAME_PREFIX}-boot.img"
+
+    # Export stock vbmeta.img so the user can disable verification when flashing:
+    #   fastboot --disable-verity --disable-verification flash vbmeta vbmeta.img
+    if unzip -o "$INNER_ZIP" vbmeta.img >/dev/null 2>&1 && [ -f vbmeta.img ]; then
+        cp vbmeta.img "/workspace/output/vbmeta.img"
+        echo "Exported vbmeta.img to output/ (flash with --disable-verity --disable-verification)"
+    else
+        echo "WARN: vbmeta.img not found in $INNER_ZIP - skipping vbmeta export"
+    fi
     cd /workspace
 fi
 

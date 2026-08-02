@@ -1,4 +1,4 @@
-# Dockerfile for Android 14 6.1.124 Kernel Build
+# Dockerfile for Android 14 6.1.162 Kernel Build
 FROM ubuntu:22.04
 
 # Prevent interactive prompts during package installation
