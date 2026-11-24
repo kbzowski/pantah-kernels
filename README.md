@@ -1,16 +1,16 @@
 # Pixel 7 Kernel builds with ROOT
 
-> This repository demonstrates Android kernel compilation techniques for Google Pixel 7 (Pantah) devices using Docker containerization with ReSukiSU, SUSFS, and Baseband Guard.
+> This repository demonstrates Android kernel compilation techniques for Google Pixel 7 (Pantah) devices using Docker containerization with BakaSU, SUSFS, and Baseband Guard.
 
 [![Android](https://img.shields.io/badge/Android-14-green)](https://developer.android.com/)
-[![Kernel](https://img.shields.io/badge/Kernel-6.1.162-blue)](https://www.kernel.org/)
-[![Security Patch](https://img.shields.io/badge/Patch-2026--06-orange)](https://source.android.com/security/bulletin)
+[![Kernel](https://img.shields.io/badge/Kernel-6.1.176-blue)](https://www.kernel.org/)
+[![Security Patch](https://img.shields.io/badge/Patch-2026--09-orange)](https://source.android.com/security/bulletin)
 [![License](https://img.shields.io/badge/license-WTFPL-red)](https://en.wikipedia.org/wiki/WTFPL)
 
 ## ✨ Features
 
 ### Root & Security
-- **ReSukiSU**: Advanced root solution using SUSFS inline hooks
+- **BakaSU**: Advanced root solution using SUSFS inline hooks
 - **SUSFS**: Comprehensive kernel-level hiding system
   - sus_path, sus_mount, sus_kstat
   - Spoof uname and cmdline/bootconfig
@@ -36,7 +36,7 @@
 - Compatible devices:
   - Google Pixel 7 (Panther)
 - Compatible ROM: stock Android with the **July 2026** security patch. The kernel is built
-  from `common-android14-6.1-2026-06`; flashing it on an older or newer ROM may fail to boot
+  from `common-android14-6.1-2026-09`; flashing it on an older or newer ROM may fail to boot
   due to vendor module symbol/vermagic mismatch.
 
 ## 🏗️ Building the Kernel
@@ -61,13 +61,13 @@ docker run -it --rm -v ./output:/workspace/output pantah-kernel bash
 Follow these steps to flash the custom kernel to your device:
 
 ### Prerequisites
-1. **Install ReSukiSU App**: Download and install the latest ReSukiSU app on your device
+1. **Install BakaSU App**: Download and install the latest BakaSU app on your device
 
 ### Step-by-Step Installation
 
 #### 1. Prepare init_boot Partition
 - Extract `init_boot.img` from your device's factory image
-- Open the ReSukiSU app and patch the `init_boot.img` using LKM (Loadable Kernel Module) method
+- Open the BakaSU app and patch the `init_boot.img` using LKM (Loadable Kernel Module) method
 - The app will create a patched file named `kernelsu_patched_XXXXXXXX_YYYYYY.img`
 
 #### 2. Flash Patched init_boot
@@ -84,7 +84,7 @@ fastboot reboot
 Now you should have root.
 
 #### 3. Install Custom Kernel
-- Open the ReSukiSU app on your device
+- Open the BakaSU app on your device
 - Navigate to kernel installation section
 - Select **AnyKernel3** installation method
 - Choose the AnyKernel3 ZIP file from your kernel build (`output/` directory)
@@ -96,9 +96,9 @@ Now you should have root.
 
 This project builds upon the excellent work of:
 
-- [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) - Root solution with advanced features
-- [SUSFS for KSU](https://github.com/ShirkNeko/susfs4ksu) - Kernel-level hiding and security
-- [SukiSU Patches](https://github.com/SukiSU-Ultra/SukiSU_patch) - Additional kernel patches
+- [BakaSU](https://github.com/Baka-SU/BakaSU) - Root solution with advanced features
+- [SUSFS for KSU](https://gitlab.com/simonpunk/susfs4ksu) - Kernel-level hiding and security
+- [SukiSU Patches](https://github.com/SukiSU-Nova/SukiSU_patch) - Additional kernel patches
 - [Baseband Guard](https://github.com/vc-teahouse/Baseband-guard) - Baseband security enhancement
 - [AnyKernel3](https://github.com/MiRinChan/AnyKernel3) - Universal kernel flasher
 - [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) - Original KernelSU development

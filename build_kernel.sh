@@ -3,7 +3,7 @@ set -e
 set -o pipefail
 
 # Build configuration - modify these values as needed
-OS_PATCH_LEVEL="2026-06-05"
+OS_PATCH_LEVEL="2026-09-05"
 CONFIG="pantah-kernel"
 
 # This is called Android14 kernel bacause device was initially with Android14
@@ -29,10 +29,10 @@ KERNEL_VERSION=$(make kernelversion)
 echo "Kernel version from source: $KERNEL_VERSION"
 cd ../
 
-echo "Adding ReSukiSU..."
-SUKISU_BRANCH=main
+echo "Adding BakaSU..."
+BAKASU_BRANCH=main
 cd common
-curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s $SUKISU_BRANCH
+curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s $BAKASU_BRANCH
 
 echo "Adding Baseband Guard..."
 curl -LSs https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -42,18 +42,21 @@ curl -LSs https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
 # second copy of that line in its OPEN_REDIRECT block, so fuzzy matching picks the wrong one.
 echo "Apply Hide Stuff Patches"
 cd /workspace
-git clone https://github.com/SukiSU-Ultra/SukiSU_patch.git
+git clone https://github.com/SukiSU-Nova/SukiSU_patch.git
 cp SukiSU_patch/69_hide_stuff.patch ./$CONFIG/common
 cd ./$CONFIG/common
 patch -p1 -F 3 <69_hide_stuff.patch
 
 echo "Applying SUSFS patches..."
 cd /workspace
-git clone https://github.com/ShirkNeko/susfs4ksu -b gki-android14-6.1
+git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1
 cp ./susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch ./$CONFIG/common
 cp ./susfs4ksu/kernel_patches/fs/* ./$CONFIG/common/fs/
 cp ./susfs4ksu/kernel_patches/include/linux/* ./$CONFIG/common/include/linux/
 cd ./$CONFIG/common
+# SUSFS 2.4.0: these helpers are only called under CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER (not in BakaSU Kconfig) -> -Werror unused-function
+sed -i -E 's/^static (struct cred \*susfs_switch_to_ksu_domain|void susfs_restore_creds)\(/static __maybe_unused \1(/' fs/susfs.c
+grep -c "__maybe_unused" fs/susfs.c
 
 #cp /workspace/$CONFIG/common/fs/proc/base.c /workspace/output/
 #cp 50_add_susfs_in_gki-android14-6.1.patch /workspace/output/
@@ -102,9 +105,9 @@ PYEOF
 
 patch --fuzz=3 -p1 < 50_add_susfs_in_gki-android14-6.1.patch
 
-# NOTE: Do NOT apply scope_min_manual_hooks_v1.6.patch with modern ReSukiSU on kernel < 6.8.
-# ReSukiSU's CONFIG_KSU_MANUAL_HOOK_AUTO_* options (default y) install the manual hooks via LSM
-# automatically, and ReSukiSU's inline_hook_check.mk explicitly rejects builds where the legacy
+# NOTE: Do NOT apply scope_min_manual_hooks_v1.6.patch with modern BakaSU on kernel < 6.8.
+# BakaSU's CONFIG_KSU_MANUAL_HOOK_AUTO_* options (default y) install the manual hooks via LSM
+# automatically, and BakaSU's inline_hook_check.mk explicitly rejects builds where the legacy
 # `ksu_vfs_read_hook` symbol still appears in fs/read_write.c.
 
 echo "Configuring kernel for build..."
@@ -114,7 +117,7 @@ cd /workspace/$CONFIG
 # CONFIG_KSU_SUSFS (SUSFS Inline Hook) so the hooks come from the SUSFS patch we apply.
 echo "CONFIG_KSU=y" >>./common/arch/arm64/configs/gki_defconfig
 
-# Add SUSFS configuration settings (symbols defined in ReSukiSU kernel/Kconfig)
+# Add SUSFS configuration settings (symbols defined in BakaSU kernel/Kconfig)
 echo "CONFIG_KSU_SUSFS=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >>./common/arch/arm64/configs/gki_defconfig
 echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >>./common/arch/arm64/configs/gki_defconfig
@@ -183,9 +186,9 @@ sed -i 's/check_defconfig//' ./common/build.config.gki
 # Set security patch level
 # sed -i 's/local spl_date="\$3"/local spl_date="${OS_PATCH_LEVEL}"/g' ./build/kernel/build_utils.sh
 
-# Set kernel version string with SukiSU naming
+# Set kernel version string with BakaSU naming
 perl -pi -e 's/-maybe-dirty//g' ./build/kernel/kleaf/impl/stamp.bzl
-# echo "CONFIG_LOCALVERSION=\"-SukiSU-SUSFS-pantah\"" >> ./common/arch/arm64/configs/gki_defconfig
+# echo "CONFIG_LOCALVERSION=\"-BakaSU-SUSFS-pantah\"" >> ./common/arch/arm64/configs/gki_defconfig
 
 # Set kernel timestamp
 CURRENT_TIME=$(date -u +"%a %b %d %H:%M:%S UTC %Y")
@@ -209,20 +212,20 @@ else
     exit 1
 fi
 
-# Extract versions from build log (try ReSukiSU first, then SukiSU-Ultra as fallback)
-SUKISU_VERSION=$(grep -E "(ReSukiSU|SukiSU-Ultra) version" build.log | head -1 | awk '{print $NF}')
+# Extract versions from build log (BakaSU prints "-- BakaSU version code: N")
+BAKASU_VERSION=$(grep "BakaSU version code" build.log | head -1 | awk '{print $NF}')
 # SUSFS version is not in build log, extract from source
 SUSFS_VERSION=$(grep -r "SUSFS_VERSION" ./common/include/linux/susfs.h 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "1.5.11")
 
 # Fallback if versions are empty
-if [ -z "$SUKISU_VERSION" ]; then
-    SUKISU_VERSION="unknown"
+if [ -z "$BAKASU_VERSION" ]; then
+    BAKASU_VERSION="unknown"
 fi
 if [ -z "$SUSFS_VERSION" ]; then
     SUSFS_VERSION="2.0.0"
 fi
 
-echo "Detected SukiSU version: $SUKISU_VERSION"
+echo "Detected BakaSU version: $BAKASU_VERSION"
 echo "Detected SUSFS version: $SUSFS_VERSION"
 
 echo "Extracting built kernel images..."
@@ -253,11 +256,11 @@ else
     fi
 fi
 
-FILENAME_PREFIX="ReSukiSU-$SUKISU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
+FILENAME_PREFIX="BakaSU-$BAKASU_VERSION-SUSFS-$SUSFS_VERSION-Android14-${KERNEL_VERSION}-${SEC_PATCH}"
 
 # ----- Build fastboot-flashable boot.img by repacking stock factory boot.img -----
 # Override FACTORY_URL env var to use a different stock build.
-FACTORY_URL="${FACTORY_URL:-https://dl.google.com/dl/android/aosp/panther-cp2a.260705.006-factory-ed94a24e.zip}"
+FACTORY_URL="${FACTORY_URL:-https://dl.google.com/dl/android/aosp/panther-cp4a.261105.040.a1-factory-fc8d5970.zip}"
 FACTORY_ZIP="/tmp/$(basename "$FACTORY_URL")"
 BOOT_WORKDIR="/tmp/bootrepack"
 MKBOOTIMG=$(find "/workspace/$CONFIG" -name "mkbootimg.py" -type f 2>/dev/null | head -1)
@@ -307,7 +310,7 @@ else
     [ "$OS_PATCH" = "None" ] && OS_PATCH=""
     [ "$CMDLINE" = "None" ]  && CMDLINE=""
 
-    PY_ARGS=( --header_version "$HDR_VER" --kernel unpack/kernel --output boot-resukisu.img )
+    PY_ARGS=( --header_version "$HDR_VER" --kernel unpack/kernel --output boot-bakasu.img )
     [ -n "$OS_VER" ]   && PY_ARGS+=( --os_version "$OS_VER" )
     [ -n "$OS_PATCH" ] && PY_ARGS+=( --os_patch_level "$OS_PATCH" )
     [ -n "$CMDLINE" ]  && PY_ARGS+=( --cmdline "$CMDLINE" )
@@ -326,7 +329,7 @@ else
     else
         echo "Adding AVB hash footer (partition_size=$BOOT_PARTITION_SIZE): $AVBTOOL"
         if python3 "$AVBTOOL" add_hash_footer \
-                --image boot-resukisu.img \
+                --image boot-bakasu.img \
                 --partition_name boot \
                 --partition_size "$BOOT_PARTITION_SIZE"; then
             echo "AVB hash footer added"
@@ -335,7 +338,7 @@ else
         fi
     fi
 
-    cp boot-resukisu.img "/workspace/output/${FILENAME_PREFIX}-boot.img"
+    cp boot-bakasu.img "/workspace/output/${FILENAME_PREFIX}-boot.img"
     echo "Created fastboot boot.img: ${FILENAME_PREFIX}-boot.img"
 
     # Export stock vbmeta.img so the user can disable verification when flashing:
