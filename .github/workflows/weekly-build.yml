@@ -26,7 +26,9 @@ jobs:
     steps:
       # Fail in seconds on a bad token / chat id, not after a 2h build.
       - name: Check Telegram access
-        run: set -o pipefail; curl -sS --fail-with-body "https://api.telegram.org/bot${TG_TOKEN}/getChat" --form-string "chat_id=${TG_CHAT}" | jq -c '{ok, description, title: .result.title}'
+        run: |
+          set -o pipefail
+          curl -sS --fail-with-body "https://api.telegram.org/bot${TG_TOKEN}/getChat" --form-string "chat_id=${TG_CHAT}" | jq -c '{ok, description, title: .result.title}'
 
       - uses: actions/checkout@v4
 
