@@ -225,6 +225,9 @@ if [ -z "$SUSFS_VERSION" ]; then
     SUSFS_VERSION="2.0.0"
 fi
 
+# Commit SHA from "-- BakaSU version name: v4.2.0-rc3-57b2db60"; CI uses it to build the changelog
+grep -m1 "BakaSU version name" build.log | grep -oE '\b[0-9a-f]{8}\b' | tail -1 > /workspace/output/bakasu_sha.txt || true
+
 echo "Detected BakaSU version: $BAKASU_VERSION"
 echo "Detected SUSFS version: $SUSFS_VERSION"
 

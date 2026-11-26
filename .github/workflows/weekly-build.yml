@@ -63,14 +63,41 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: BakaSU changelog
+        id: log
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          NEW=$(cat output/bakasu_sha.txt 2>/dev/null || true)
+          # previous release body carries "BakaSU: <sha>" (written below)
+          PREV=$(gh api "repos/${{ github.repository }}/releases" \
+            --jq '[.[] | select(.tag_name != "${{ steps.ver.outputs.tag }}")][0].body // ""' \
+            | grep -oP 'BakaSU: \K[0-9a-f]+' | head -1 || true)
+          echo "BakaSU: ${NEW:-unknown}" > changelog.txt
+          if [ -n "$NEW" ] && [ -n "$PREV" ] && [ "$NEW" != "$PREV" ]; then
+            CMP="https://github.com/Baka-SU/BakaSU/compare/${PREV}...${NEW}"
+            echo "cmp=$CMP" >> "$GITHUB_OUTPUT"
+            gh api "repos/Baka-SU/BakaSU/compare/${PREV}...${NEW}" --jq '.commits[].commit.message | split("\n")[0]' \
+              | grep -viE 'update translations|clang-format' | tac > commits.txt || true
+          fi
+          touch commits.txt
+          cat changelog.txt commits.txt
+
       - name: Create GitHub release
         if: steps.ver.outputs.skip != 'true'
         run: |
           TAG="${{ steps.ver.outputs.tag }}"
+          {
+            echo "Automated weekly build ($(date -u +%F)). Flash the AnyKernel3 zip with a kernel flasher, or the boot.img via fastboot (see README)."
+            echo
+            cat changelog.txt
+            if [ -s commits.txt ]; then
+              echo; echo "### BakaSU changes"; sed 's/^/- /' commits.txt
+              echo; echo "[Full diff](${{ steps.log.outputs.cmp }})"
+            fi
+          } > notes.md
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true  # only hit on force
           gh release create "$TAG" output/*.zip output/*-boot.img output/vbmeta.img \
-            --title "$TAG" \
-            --notes "Automated weekly build ($(date -u +%F)). Flash the AnyKernel3 zip with a kernel flasher, or the boot.img via fastboot (see README)."
+            --title "$TAG" --notes-file notes.md
 
       - name: Post to Telegram
         if: steps.ver.outputs.skip != 'true'
@@ -86,3 +113,17 @@ jobs:
 
           boot.img + vbmeta: <a href=\"${URL}\">GitHub release</a>" \
             -F "document=@${{ steps.ver.outputs.zip }}"
+
+          # Changelog as a separate message: document captions are capped at 1024 chars.
+          if [ -s commits.txt ]; then
+            # shortcut: long changelogs are cut at 40 lines, the diff link has the rest
+            TEXT="<b>BakaSU changes</b>
+          $(head -n 40 commits.txt | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/^/• /')
+
+          <a href=\"${{ steps.log.outputs.cmp }}\">Full diff</a>"
+            curl -sS --fail-with-body "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              --form-string "chat_id=${TG_CHAT}" \
+              --form-string "parse_mode=HTML" \
+              --form-string "disable_web_page_preview=true" \
+              --form-string "text=${TEXT}" >/dev/null
+          fi
