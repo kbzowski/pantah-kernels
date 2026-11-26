@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # keepalive below
 
 concurrency: weekly-build
 
@@ -32,6 +33,10 @@ jobs:
           curl -sS --fail-with-body "https://api.telegram.org/bot${TG_TOKEN}/getChatMember" \
             --form-string "chat_id=${TG_CHAT}" --form-string "user_id=${TG_TOKEN%%:*}" \
             | jq -e -c '{ok, description, status: .result.status} | ., (.status == "administrator")'
+
+      # GitHub disables cron workflows after 60 days without repo activity; re-enabling via API resets that timer.
+      - name: Keepalive
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/weekly-build.yml/enable"
 
       - uses: actions/checkout@v4
 
